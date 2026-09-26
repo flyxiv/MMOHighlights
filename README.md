@@ -35,6 +35,7 @@ Analyze your own raid footage, whether from a recorded VOD or a live stream.
 ## Roadmap
 
 - [ ] Twitch live / VOD downloader page ([#1](https://github.com/flyxiv/MMOHighlights/issues/1))
+- [x] Image labeling tool for training data: classification, boxes, polygons ([#4](https://github.com/flyxiv/MMOHighlights/issues/4), see [`labeler/`](labeler/README.md))
 - [ ] Pull detection from video
 - [ ] Death / phase / burst window detection
 - [ ] RWF multi-stream tracking and real-time highlight feed
