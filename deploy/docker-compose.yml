@@ -1,0 +1,50 @@
+# Runs the whole recorder on one VM. The page is only published on 127.0.0.1; reach it over
+# Tailscale with `tailscale serve --bg 3000` (see deploy/README.md).
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: recorder
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_DB: recorder
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recorder"]
+      interval: 5s
+      retries: 10
+
+  backend:
+    build: ../backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://recorder:${POSTGRES_PASSWORD}@postgres:5432/recorder
+      SPOOL_DIR: /spool
+      STORAGE_BACKEND: gcs
+      GCS_BUCKET: mmohighlights
+      GCS_PREFIX: archives/
+      # Only needed when the VM's own service account has no access to the bucket.
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS_IN_CONTAINER:-}
+    volumes:
+      - /var/lib/mmohighlights/spool:/spool
+      - ./secrets:/secrets:ro
+    # Recordings stop cleanly (ffmpeg closes the current segment) within this window.
+    stop_grace_period: 60s
+
+  frontend:
+    build:
+      context: ../frontend
+      args:
+        BACKEND_URL: http://backend:8000
+    restart: unless-stopped
+    depends_on: [backend]
+    ports:
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  pgdata:

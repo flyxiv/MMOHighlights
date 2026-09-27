@@ -1,0 +1,4 @@
+deploy/.env
+deploy/secrets/
+.DS_Store
+local/config.ps1
