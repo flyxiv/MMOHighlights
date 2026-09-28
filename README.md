@@ -10,7 +10,7 @@ MMOHighlights watches raid footage — live streams or recorded VODs — and tur
 
 Follows Race to World First events as they happen and surfaces the pulls that matter.
 
-- Tracks multiple RWF guild/team live streams (e.g. Twitch) simultaneously
+- Tracks multiple RWF guild/team live streams simultaneously across live platforms (Twitch, YouTube, Chzzk)
 - Detects pulls and measures progress (boss HP %, phase reached, pull duration)
 - Automatically clips **progress pulls** — new best attempts, new phases seen, kills
 - Produces real-time highlight feeds so viewers can catch up without watching every stream
@@ -32,9 +32,17 @@ Analyze your own raid footage, whether from a recorded VOD or a live stream.
 | Final Fantasy XIV | Planned |
 | World of Warcraft | Planned |
 
+## Supported Live Platforms
+
+| Platform | Status |
+| --- | --- |
+| Twitch | Planned |
+| YouTube | Planned |
+| Chzzk | Planned |
+
 ## Roadmap
 
-- [ ] Twitch live / VOD downloader page ([#1](https://github.com/flyxiv/MMOHighlights/issues/1))
+- [ ] Live Platform live / VOD downloader page ([#1](https://github.com/flyxiv/MMOHighlights/issues/1))
 - [ ] Pull detection from video
 - [ ] Death / phase / burst window detection
 - [ ] RWF multi-stream tracking and real-time highlight feed
