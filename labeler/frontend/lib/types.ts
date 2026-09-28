@@ -1,78 +1,132 @@
-// Mirrors labeler/backend/app/schemas.py.
+// Mirrors labeler/backend/app/schemas.py. Label data follows the uniform dataset format
+// (datasets/STRUCTURE.md in RaidDesigner): {task: {type, value}}, class names, absolute-pixel xyxy.
 
 export const COLORS = ["red", "orange", "amber", "green", "cyan", "blue", "violet", "pink"] as const;
 export type Color = (typeof COLORS)[number];
-export type Task = "classification" | "detection" | "segmentation";
-export type Status = "todo" | "done" | "review";
 
-export interface LabelClass {
-  id: number;
-  name: string;
-  color: Color;
-}
+export type LabelType =
+  | "class"
+  | "multilabel"
+  | "bbox"
+  | "polygon"
+  | "mask"
+  | "keypoints"
+  | "span"
+  | "scalar"
+  | "text"
+  | "ref";
+export const EDITABLE_TYPES = ["class", "multilabel", "bbox", "polygon"] as const;
+export type EditableType = (typeof EDITABLE_TYPES)[number];
+export type Status = "todo" | "review" | "done" | "excluded";
 
-export interface LabelGroup {
-  name: string;
-  options: string[];
+export interface TaskSpec {
+  type: LabelType;
+  unit?: string | null;
+  description?: string | null;
 }
 
 export interface Stats {
   total: number;
-  done: number;
-  review: number;
   todo: number;
-  class_counts: Record<string, number>;
+  review: number;
+  done: number;
+  excluded: number;
+  new: number;
+  edited_not_done: number;
+  class_counts: Record<string, Record<string, number>>;
 }
 
-export interface Project {
-  slug: string;
+export interface Dataset {
   name: string;
-  created_at: string;
-  tasks: Task[];
-  classes: LabelClass[];
-  groups: LabelGroup[];
-  image_count: number;
+  title: string;
+  description: string | null;
+  tasks: Record<string, TaskSpec>;
+  classes: Record<string, string[]>;
+  base_release: string | null;
+  latest: string | null;
+  releases: string[];
+  next_release: string;
   storage_uri: string;
   stats: Stats;
   pending_sync: number;
 }
 
-export interface ProjectSummary {
-  slug: string;
+export interface DatasetSummary {
   name: string;
-  tasks: Task[];
-  created_at: string;
-  image_count: number;
-  classes: number;
-  done: number | null;
+  title: string;
+  tasks: Record<string, TaskSpec>;
+  latest: string | null;
+  samples: number | null;
+  labeling: boolean;
+  created: string | null;
 }
 
-export interface ClassIn {
-  id?: number;
+export interface DatasetCreate {
   name: string;
-  color?: Color;
+  title: string;
+  description?: string;
+  modality?: string[];
+  license?: string;
+  project?: string;
+  tags?: string[];
+  tasks: Record<string, TaskSpec>;
+  classes: Record<string, string[]>;
 }
 
-export interface ProjectCreate {
+export interface LabelingPatch {
+  tasks?: Record<string, TaskSpec>;
+  classes?: Record<string, string[]>;
+}
+
+/** A label as stored: {type, value}. */
+export interface Label {
+  type: LabelType;
+  value: unknown;
+}
+export type Labels = Record<string, Label>;
+
+export interface SampleRow {
+  id: string;
   name: string;
-  tasks: Task[];
-  classes: ClassIn[];
-  groups: LabelGroup[];
+  status: Status;
+  objects: number;
+  suggested: number;
+  labels: Record<string, string | string[]>;
+  split: string;
+  new: boolean;
+  reviewed: boolean;
 }
 
-export interface ProjectPatch {
-  name?: string;
-  tasks?: Task[];
-  classes?: ClassIn[];
-  groups?: LabelGroup[];
+export interface Sample {
+  id: string;
+  name: string;
+  image: string;
+  width: number;
+  height: number;
+  status: Status;
+  labels: Labels;
+  suggestions: Labels;
+  split: string;
+  new: boolean;
+  meta: Record<string, unknown>;
+  updated_at: string | null;
 }
 
-export type BBox = [number, number, number, number];
+export interface SampleSave {
+  status: Status;
+  labels: Labels;
+  suggestions: Labels;
+}
+
+// ---- editor model
+
+export type BBox = [number, number, number, number]; // x, y, width, height (converted from xyxy)
 export type Point = [number, number];
 
 export interface LabelObject {
   id: string;
-  class_id: number;
+  task: string;
+  cls: string;
   type: "box" | "polygon";
   bbox: BBox;
   points?: Point[] | null;
@@ -81,30 +135,16 @@ export interface LabelObject {
   accepted: boolean;
 }
 
-export interface AnnotationDoc {
+export interface EditorDoc {
   status: Status;
-  labels: Record<string, string>;
+  /** class tasks -> value, multilabel tasks -> values */
+  choices: Record<string, string | string[]>;
   objects: LabelObject[];
-}
-
-export interface Annotation extends AnnotationDoc {
-  file: string;
-  updated_at: string | null;
-}
-
-export interface ImageRow {
-  file: string;
-  width: number;
-  height: number;
-  status: Status;
-  objects: number;
-  suggested: number;
-  labels: Record<string, string>;
 }
 
 export interface Job {
   id: string;
-  slug: string;
+  dataset: string;
   state: "running" | "done" | "failed";
   source: string;
   total: number;
@@ -122,21 +162,18 @@ export interface UploadResult {
 }
 
 export interface BulkRequest {
-  files: string[];
-  labels?: Record<string, string | null>;
+  ids: string[];
+  labels?: Record<string, string | string[] | null>;
   status?: Status;
 }
 
-export interface ExportRequest {
-  format: "yolo" | "coco";
-  include_unfinished: boolean;
-}
-
-export interface ExportResult {
+export interface ReleaseResult {
+  version: string;
   uri: string;
-  format: string;
-  images: number;
-  objects: number;
+  samples: number;
+  reviewed: number;
+  splits: Record<string, number>;
+  warnings: string[];
 }
 
 export interface Health {

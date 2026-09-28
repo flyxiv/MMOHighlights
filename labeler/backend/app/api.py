@@ -7,28 +7,28 @@ from fastapi.responses import FileResponse
 
 from app.labeler import Labeler
 from app.schemas import (
-    Annotation,
-    AnnotationIn,
     BulkRequest,
     BulkResult,
-    ExportRequest,
-    ExportResult,
+    Dataset,
+    DatasetCreate,
+    DatasetSummary,
     Health,
-    ImageRow,
     ImportRequest,
     Job,
+    LabelingPatch,
     PredictionsIn,
     PredictionsResult,
-    ProjectCreate,
-    ProjectOut,
-    ProjectPatch,
-    ProjectSummary,
+    ReleaseRequest,
+    ReleaseResult,
+    Sample,
+    SampleRow,
+    SampleSave,
     UploadResult,
 )
 
 router = APIRouter(prefix="/api")
 
-# Image names never change content (re-imports of a name are skipped), so browsers may cache them.
+# Sample ids are content hashes, so an id's image never changes and browsers may cache it.
 IMMUTABLE = {"Cache-Control": "private, max-age=31536000, immutable"}
 
 
@@ -44,64 +44,64 @@ def health(request: Request):
     )
 
 
-@router.get("/projects", response_model=list[ProjectSummary])
-def list_projects(request: Request):
-    return labeler(request).list_projects()
+@router.get("/datasets", response_model=list[DatasetSummary])
+def list_datasets(request: Request):
+    return labeler(request).list_datasets()
 
 
-@router.post("/projects", response_model=ProjectOut, status_code=201)
-def create_project(body: ProjectCreate, request: Request):
-    return labeler(request).create_project(body)
+@router.post("/datasets", response_model=Dataset, status_code=201)
+def create_dataset(body: DatasetCreate, request: Request):
+    return labeler(request).create_dataset(body)
 
 
-@router.get("/projects/{slug}", response_model=ProjectOut)
-def get_project(slug: str, request: Request):
-    return labeler(request).project(slug)
+@router.get("/datasets/{name}", response_model=Dataset)
+def get_dataset(name: str, request: Request):
+    return labeler(request).dataset(name)
 
 
-@router.patch("/projects/{slug}", response_model=ProjectOut)
-def update_project(slug: str, body: ProjectPatch, request: Request):
-    return labeler(request).update_project(slug, body)
+@router.patch("/datasets/{name}/labeling", response_model=Dataset)
+def update_labeling(name: str, body: LabelingPatch, request: Request):
+    return labeler(request).update_labeling(name, body)
 
 
-@router.get("/projects/{slug}/images", response_model=list[ImageRow])
-def list_images(slug: str, request: Request):
-    return labeler(request).images(slug)
+@router.get("/datasets/{name}/samples", response_model=list[SampleRow])
+def list_samples(name: str, request: Request):
+    return labeler(request).rows(name)
 
 
-@router.get("/projects/{slug}/files/{file:path}")
-def image_file(slug: str, file: str, request: Request):
-    return FileResponse(labeler(request).image_path(slug, file), headers=IMMUTABLE)
+@router.get("/datasets/{name}/samples/{sid}", response_model=Sample)
+def get_sample(name: str, sid: str, request: Request):
+    return labeler(request).sample(name, sid)
 
 
-@router.get("/projects/{slug}/thumbs/{file:path}")
-def image_thumb(slug: str, file: str, request: Request):
-    return FileResponse(labeler(request).thumb_path(slug, file), media_type="image/webp", headers=IMMUTABLE)
+@router.put("/datasets/{name}/samples/{sid}", response_model=Sample)
+def save_sample(name: str, sid: str, body: SampleSave, request: Request):
+    return labeler(request).save_sample(name, sid, body)
 
 
-@router.get("/projects/{slug}/annotations/{file:path}", response_model=Annotation)
-def get_annotation(slug: str, file: str, request: Request):
-    return labeler(request).annotation(slug, file)
+@router.get("/datasets/{name}/samples/{sid}/image")
+def sample_image(name: str, sid: str, request: Request):
+    return FileResponse(labeler(request).image_path(name, sid), headers=IMMUTABLE)
 
 
-@router.put("/projects/{slug}/annotations/{file:path}", response_model=Annotation)
-def put_annotation(slug: str, file: str, body: AnnotationIn, request: Request):
-    return labeler(request).save_annotation(slug, file, body)
+@router.get("/datasets/{name}/samples/{sid}/thumb")
+def sample_thumb(name: str, sid: str, request: Request):
+    return FileResponse(labeler(request).thumb_path(name, sid), media_type="image/webp", headers=IMMUTABLE)
 
 
-@router.post("/projects/{slug}/bulk", response_model=BulkResult)
-def bulk(slug: str, body: BulkRequest, request: Request):
-    return BulkResult(updated=labeler(request).bulk(slug, body))
+@router.post("/datasets/{name}/bulk", response_model=BulkResult)
+def bulk(name: str, body: BulkRequest, request: Request):
+    return BulkResult(updated=labeler(request).bulk(name, body))
 
 
-@router.post("/projects/{slug}/imports", response_model=Job, status_code=202)
-def start_import(slug: str, body: ImportRequest, request: Request):
-    return labeler(request).start_import(slug, body.source)
+@router.post("/datasets/{name}/imports", response_model=Job, status_code=202)
+def start_import(name: str, body: ImportRequest, request: Request):
+    return labeler(request).start_import(name, body.source)
 
 
-@router.get("/projects/{slug}/imports", response_model=list[Job])
-def list_imports(slug: str, request: Request):
-    return labeler(request).jobs(slug)
+@router.get("/datasets/{name}/imports", response_model=list[Job])
+def list_imports(name: str, request: Request):
+    return labeler(request).jobs(name)
 
 
 @router.get("/imports/{job_id}", response_model=Job)
@@ -109,17 +109,17 @@ def get_import(job_id: str, request: Request):
     return labeler(request).job(job_id)
 
 
-@router.post("/projects/{slug}/uploads", response_model=UploadResult)
-def upload(slug: str, request: Request, files: Annotated[list[UploadFile], File()]):
+@router.post("/datasets/{name}/uploads", response_model=UploadResult)
+def upload(name: str, request: Request, files: Annotated[list[UploadFile], File()]):
     items = [(f.filename or "", f.file.read()) for f in files]
-    return labeler(request).upload(slug, items)
+    return labeler(request).upload(name, items)
 
 
-@router.post("/projects/{slug}/predictions", response_model=PredictionsResult)
-def predictions(slug: str, body: PredictionsIn, request: Request):
-    return labeler(request).apply_predictions(slug, body)
+@router.post("/datasets/{name}/predictions", response_model=PredictionsResult)
+def predictions(name: str, body: PredictionsIn, request: Request):
+    return labeler(request).apply_predictions(name, body)
 
 
-@router.post("/projects/{slug}/exports", response_model=ExportResult)
-def export(slug: str, body: ExportRequest, request: Request):
-    return labeler(request).export(slug, body)
+@router.post("/datasets/{name}/releases", response_model=ReleaseResult, status_code=201)
+def cut_release(name: str, body: ReleaseRequest, request: Request):
+    return labeler(request).release(name, body)

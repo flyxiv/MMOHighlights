@@ -1,5 +1,5 @@
-import { ProjectsPage } from "@/components/labeler/projects-page";
+import { DatasetsPage } from "@/components/labeler/datasets-page";
 
 export default function Page() {
-  return <ProjectsPage />;
+  return <DatasetsPage />;
 }

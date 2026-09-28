@@ -31,9 +31,9 @@ export function sourceReady(s: ImportSource): boolean {
  * Starts the import. Folder and bucket imports run on the server (poll the project's imports);
  * uploads run here and resolve when done.
  */
-export async function runImport(slug: string, s: ImportSource, onUploadProgress: (done: number, total: number) => void) {
-  if (s.kind === "upload") return uploadInBatches(slug, s.files, onUploadProgress);
-  await api.startImport(slug, s.path.trim());
+export async function runImport(dataset: string, s: ImportSource, onUploadProgress: (done: number, total: number) => void) {
+  if (s.kind === "upload") return uploadInBatches(dataset, s.files, onUploadProgress);
+  await api.startImport(dataset, s.path.trim());
   return null;
 }
 
@@ -47,9 +47,12 @@ export function ImportPanel({ value, onChange }: { value: ImportSource; onChange
   const filesRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
   const pick = (list: FileList | null) => {
-    const files = Array.from(list ?? []).filter((f) => IMAGE_RE.test(f.name));
+    // frames.json links frames to the video they were cut from; it travels with the images.
+    const files = Array.from(list ?? []).filter((f) => IMAGE_RE.test(f.name) || f.name === "frames.json");
     onChange({ ...value, files });
   };
+  const images = value.files.filter((f) => f.name !== "frames.json").length;
+  const sidecars = value.files.length - images;
   return (
     <div className="flex flex-col gap-2">
       <div className="flex w-fit rounded-md bg-muted p-[3px]">
@@ -78,7 +81,9 @@ export function ImportPanel({ value, onChange }: { value: ImportSource; onChange
             Choose a folder
           </Button>
           <span className="text-xs text-muted-foreground">
-            {value.files.length ? `${formatNumber(value.files.length)} images selected` : "JPG, PNG, WebP or BMP"}
+            {value.files.length
+              ? `${formatNumber(images)} images selected${sidecars ? ` · ${sidecars} frames.json` : ""}`
+              : "JPG, PNG, WebP or BMP"}
           </span>
           <input ref={filesRef} type="file" multiple accept="image/*" hidden onChange={(e) => pick(e.target.files)} />
           <input
@@ -94,16 +99,16 @@ export function ImportPanel({ value, onChange }: { value: ImportSource; onChange
           value={value.path}
           onChange={(e) => onChange({ ...value, path: e.target.value })}
           placeholder={
-            value.kind === "bucket" ? "gs://mmohighlights/frames/ffxiv/" : "C:\\Users\\Public\\frames\\kefka-prog"
+            value.kind === "bucket" ? "gs://ai_datasets_jyn/archive/ffxiv_video_analyze_dataset/" : "C:\\Users\\Public\\frames\\kefka-prog"
           }
           className="font-mono text-xs"
         />
       )}
       <p className="text-xs text-muted-foreground">
         {value.kind === "folder"
-          ? "Images in the folder and its subfolders are copied into the project in the bucket."
+          ? "Images in the folder and its subfolders are copied to raw/labeler/<date>/<id>. Duplicates are skipped. A frames.json next to frames links them to their video."
           : value.kind === "bucket"
-            ? "Every image under this prefix is copied into the project. The backend's credentials need read access."
+            ? "Every image under this prefix is copied to raw/labeler/. The backend's credentials need read access. A frames.json next to frames links them to their video."
             : "Files are sent through the page; for thousands of images a folder import is faster."}
       </p>
     </div>

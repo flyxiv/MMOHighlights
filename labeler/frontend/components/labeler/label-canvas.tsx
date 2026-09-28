@@ -6,7 +6,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { addShape, commitDraft, finishPolygon } from "@/lib/actions";
 import { imageUrl, thumbUrl } from "@/lib/api";
 import { MAX_SCALE, MIN_SCALE, useEditor } from "@/lib/editor-store";
-import { labelColor, labelInk } from "@/lib/format";
+import { classColor, colorOf, labelInk } from "@/lib/format";
 import {
   boxFromPoints,
   clamp,
@@ -17,7 +17,8 @@ import {
   resizeBox,
   translateObject,
 } from "@/lib/geometry";
-import type { BBox, ImageRow, LabelClass, LabelObject, Point, Project } from "@/lib/types";
+import type { BBox, Color, Dataset, LabelObject, Point, Sample } from "@/lib/types";
+import type { Tool } from "@/lib/editor-store";
 
 type Interaction =
   | { kind: "pan"; sx: number; sy: number; x0: number; y0: number }
@@ -30,7 +31,15 @@ const HANDLE_PX = 6; // pointer tolerance around a handle, in screen pixels
 const MIN_DRAG_PX = 4;
 const CLOSE_POLYGON_PX = 8;
 
-export function LabelCanvas({ project, image }: { project: Project; image: ImageRow }) {
+/** The shape task a drawing tool adds to: the active task if it has the right type, else the first one that does. */
+export function drawTaskFor(dataset: Dataset, tool: Tool, activeTask: string | null): string | null {
+  const type = tool === "box" ? "bbox" : tool === "polygon" ? "polygon" : null;
+  if (!type) return null;
+  if (activeTask && dataset.tasks[activeTask]?.type === type) return activeTask;
+  return Object.entries(dataset.tasks).find(([, s]) => s.type === type)?.[0] ?? null;
+}
+
+export function LabelCanvas({ dataset, image }: { dataset: Dataset; image: Sample }) {
   const doc = useEditor((s) => s.doc);
   const selectedId = useEditor((s) => s.selectedId);
   const tool = useEditor((s) => s.tool);
@@ -42,7 +51,8 @@ export function LabelCanvas({ project, image }: { project: Project; image: Image
   const view = useEditor((s) => s.view);
   const viewport = useEditor((s) => s.viewport);
   const fitRequest = useEditor((s) => s.fitRequest);
-  const lastClassId = useEditor((s) => s.lastClassId);
+  const lastClass = useEditor((s) => s.lastClass);
+  const activeTask = useEditor((s) => s.activeTask);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const interaction = useRef<Interaction | null>(null);
@@ -56,7 +66,8 @@ export function LabelCanvas({ project, image }: { project: Project; image: Image
 
   const iw = image.width;
   const ih = image.height;
-  const classes = useMemo(() => new Map(project.classes.map((c) => [c.id, c])), [project.classes]);
+  const colorFor = useCallback((o: LabelObject) => classColor(dataset, o.task, o.cls), [dataset]);
+  const drawTask = drawTaskFor(dataset, tool, activeTask);
 
   // ---- viewport size and fitting
 
@@ -73,7 +84,7 @@ export function LabelCanvas({ project, image }: { project: Project; image: Image
   const fitKey = useRef<string>("");
   useLayoutEffect(() => {
     if (!viewport.width || !viewport.height) return;
-    const key = `${fitRequest}:${image.file}`;
+    const key = `${fitRequest}:${image.id}`;
     if (fitKey.current === key) return;
     fitKey.current = key;
     const pad = 32;
@@ -87,9 +98,9 @@ export function LabelCanvas({ project, image }: { project: Project; image: Image
       x: (viewport.width - iw * scale) / 2,
       y: (viewport.height - ih * scale) / 2,
     });
-  }, [fitRequest, viewport.width, viewport.height, iw, ih, image.file]);
+  }, [fitRequest, viewport.width, viewport.height, iw, ih, image.id]);
 
-  useEffect(() => setLoaded(false), [image.file]);
+  useEffect(() => setLoaded(false), [image.id]);
 
   // ---- coordinate helpers
 
@@ -191,7 +202,7 @@ export function LabelCanvas({ project, image }: { project: Project; image: Image
       if (pts.length >= 3) {
         const [fx, fy] = pts[0];
         if (Math.hypot(sx(fx) - (e.clientX - containerRef.current!.getBoundingClientRect().left), sy(fy) - (e.clientY - containerRef.current!.getBoundingClientRect().top)) <= CLOSE_POLYGON_PX) {
-          finishPolygon();
+          if (drawTask) finishPolygon(drawTask);
           return;
         }
       }
@@ -263,7 +274,7 @@ export function LabelCanvas({ project, image }: { project: Project; image: Image
       const box = boxFromPoints(it.start, clampPoint(p));
       setDrawBox(null);
       if (box && box[2] * view.scale >= MIN_DRAG_PX && box[3] * view.scale >= MIN_DRAG_PX) {
-        addShape({ type: "box", bbox: box });
+        if (drawTask) addShape({ type: "box", bbox: box, task: drawTask });
       } else {
         // A click with the box tool selects what's under it.
         const hit = hitObject(visible, p, 3 / view.scale);
@@ -287,7 +298,7 @@ export function LabelCanvas({ project, image }: { project: Project; image: Image
     panning ? "grabbing" : spaceHeld || tool === "pan" ? "grab" : tool === "box" || tool === "polygon" ? "crosshair" : hoverCursor ?? "default";
 
   const suggestions = (doc?.objects ?? []).filter((o) => !o.accepted).length;
-  const counts = project.stats.class_counts;
+
 
   const draftBox = draft ? (draft.type === "box" ? draft.bbox : null) : null;
   const draftPoly = draft?.type === "polygon" ? draft.points : null;
@@ -312,13 +323,13 @@ export function LabelCanvas({ project, image }: { project: Project; image: Image
         {/* The thumbnail shows instantly while the full image loads. */}
         {!loaded ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={thumbUrl(project.slug, image.file)} alt="" draggable={false} className="absolute inset-0 size-full blur-[1px]" />
+          <img src={thumbUrl(dataset.name, image.id)} alt="" draggable={false} className="absolute inset-0 size-full blur-[1px]" />
         ) : null}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          key={image.file}
-          src={imageUrl(project.slug, image.file)}
-          alt={image.file}
+          key={image.id}
+          src={imageUrl(dataset.name, image.id)}
+          alt={image.name}
           draggable={false}
           onLoad={() => setLoaded(true)}
           className="absolute inset-0 size-full"
@@ -328,9 +339,9 @@ export function LabelCanvas({ project, image }: { project: Project; image: Image
 
       <svg className="pointer-events-none absolute inset-0 size-full overflow-visible">
         {visible.map((o) => (
-          <Shape key={o.id} o={o} cls={classes.get(o.class_id)} selected={o.id === selectedId} sx={sx} sy={sy} s={s} />
+          <Shape key={o.id} o={o} color={colorFor(o)} selected={o.id === selectedId} sx={sx} sy={sy} s={s} />
         ))}
-        {selected && !locked[selected.id] ? <Handles o={selected} cls={classes.get(selected.class_id)} sx={sx} sy={sy} /> : null}
+        {selected && !locked[selected.id] ? <Handles o={selected} color={colorFor(selected)} sx={sx} sy={sy} /> : null}
 
         {drawBox ? (
           <rect x={sx(drawBox[0])} y={sy(drawBox[1])} width={drawBox[2] * s} height={drawBox[3] * s} className="fill-white/10 stroke-white" strokeWidth={1.5} strokeDasharray="6 4" />
@@ -366,8 +377,7 @@ export function LabelCanvas({ project, image }: { project: Project; image: Image
 
       {/* Class tags sit in HTML so text renders crisply at any zoom. */}
       {visible.map((o) => {
-        const cls = classes.get(o.class_id);
-        if (!cls) return null;
+        const color = colorFor(o);
         return (
           <div
             key={o.id}
@@ -375,12 +385,12 @@ export function LabelCanvas({ project, image }: { project: Project; image: Image
             style={{
               left: sx(o.bbox[0]) - 0.75,
               top: sy(o.bbox[1]) - 18,
-              background: labelColor(cls.color),
-              color: labelInk(cls.color),
+              background: colorOf(color),
+              color: color ? labelInk(color) : "#18181b",
               opacity: o.accepted ? 1 : 0.85,
             }}
           >
-            {cls.name}
+            {o.cls}
             {!o.accepted && o.score != null ? ` · ${o.score.toFixed(2)}` : ""}
           </div>
         );
@@ -415,9 +425,9 @@ export function LabelCanvas({ project, image }: { project: Project; image: Image
 
       {draft && draftBounds ? (
         <ClassPicker
-          classes={project.classes}
-          counts={counts}
-          lastClassId={lastClassId}
+          dataset={dataset}
+          task={draft.task}
+          lastClass={lastClass?.task === draft.task ? lastClass.cls : null}
           onPick={commitDraft}
           onCancel={() => useEditor.getState().setDraft(null)}
           style={pickerPosition(draftBounds, sx, sy, viewport)}
@@ -450,20 +460,20 @@ function pickerPosition(
 
 function Shape({
   o,
-  cls,
+  color: c,
   selected,
   sx,
   sy,
   s,
 }: {
   o: LabelObject;
-  cls: LabelClass | undefined;
+  color: Color | null;
   selected: boolean;
   sx: (x: number) => number;
   sy: (y: number) => number;
   s: number;
 }) {
-  const color = cls ? labelColor(cls.color) : "#a1a1aa";
+  const color = colorOf(c);
   const common = {
     fill: color,
     fillOpacity: selected ? 0.16 : 0.08,
@@ -480,16 +490,16 @@ function Shape({
 
 function Handles({
   o,
-  cls,
+  color: c,
   sx,
   sy,
 }: {
   o: LabelObject;
-  cls: LabelClass | undefined;
+  color: Color | null;
   sx: (x: number) => number;
   sy: (y: number) => number;
 }) {
-  const color = cls ? labelColor(cls.color) : "#a1a1aa";
+  const color = colorOf(c);
   const pts = o.type === "polygon" && o.points ? o.points : handlePoints(o.bbox);
   return (
     <g>

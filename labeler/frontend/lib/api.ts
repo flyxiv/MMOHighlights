@@ -1,17 +1,16 @@
 import { ApiError } from "@/lib/api-error";
 import type {
-  Annotation,
-  AnnotationDoc,
   BulkRequest,
-  ExportRequest,
-  ExportResult,
+  Dataset,
+  DatasetCreate,
+  DatasetSummary,
   Health,
-  ImageRow,
   Job,
-  Project,
-  ProjectCreate,
-  ProjectPatch,
-  ProjectSummary,
+  LabelingPatch,
+  ReleaseResult,
+  Sample,
+  SampleRow,
+  SampleSave,
   UploadResult,
 } from "@/lib/types";
 
@@ -59,17 +58,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-/** Encodes each path segment; image names may contain folders. */
-export function filePath(file: string): string {
-  return file.split("/").map(encodeURIComponent).join("/");
+export function imageUrl(dataset: string, id: string): string {
+  return `/api/datasets/${dataset}/samples/${id}/image`;
 }
 
-export function imageUrl(slug: string, file: string): string {
-  return `/api/projects/${slug}/files/${filePath(file)}`;
-}
-
-export function thumbUrl(slug: string, file: string): string {
-  return `/api/projects/${slug}/thumbs/${filePath(file)}`;
+export function thumbUrl(dataset: string, id: string): string {
+  return `/api/datasets/${dataset}/samples/${id}/thumb`;
 }
 
 const json = (body: unknown) => JSON.stringify(body);
@@ -77,33 +71,28 @@ const json = (body: unknown) => JSON.stringify(body);
 export const api = {
   health: () => request<Health>("/api/health"),
 
-  listProjects: () => request<ProjectSummary[]>("/api/projects"),
-  createProject: (body: ProjectCreate) =>
-    request<Project>("/api/projects", { method: "POST", body: json(body) }),
-  getProject: (slug: string) => request<Project>(`/api/projects/${slug}`),
-  updateProject: (slug: string, body: ProjectPatch) =>
-    request<Project>(`/api/projects/${slug}`, { method: "PATCH", body: json(body) }),
+  listDatasets: () => request<DatasetSummary[]>("/api/datasets"),
+  createDataset: (body: DatasetCreate) => request<Dataset>("/api/datasets", { method: "POST", body: json(body) }),
+  getDataset: (name: string) => request<Dataset>(`/api/datasets/${name}`),
+  updateLabeling: (name: string, body: LabelingPatch) =>
+    request<Dataset>(`/api/datasets/${name}/labeling`, { method: "PATCH", body: json(body) }),
 
-  listImages: (slug: string) => request<ImageRow[]>(`/api/projects/${slug}/images`),
-  getAnnotation: (slug: string, file: string) =>
-    request<Annotation>(`/api/projects/${slug}/annotations/${filePath(file)}`),
-  saveAnnotation: (slug: string, file: string, doc: AnnotationDoc) =>
-    request<Annotation>(`/api/projects/${slug}/annotations/${filePath(file)}`, {
-      method: "PUT",
-      body: json(doc),
-    }),
-  bulk: (slug: string, body: BulkRequest) =>
-    request<{ updated: number }>(`/api/projects/${slug}/bulk`, { method: "POST", body: json(body) }),
+  listSamples: (name: string) => request<SampleRow[]>(`/api/datasets/${name}/samples`),
+  getSample: (name: string, id: string) => request<Sample>(`/api/datasets/${name}/samples/${id}`),
+  saveSample: (name: string, id: string, body: SampleSave) =>
+    request<Sample>(`/api/datasets/${name}/samples/${id}`, { method: "PUT", body: json(body) }),
+  bulk: (name: string, body: BulkRequest) =>
+    request<{ updated: number }>(`/api/datasets/${name}/bulk`, { method: "POST", body: json(body) }),
 
-  startImport: (slug: string, source: string) =>
-    request<Job>(`/api/projects/${slug}/imports`, { method: "POST", body: json({ source }) }),
-  listImports: (slug: string) => request<Job[]>(`/api/projects/${slug}/imports`),
-  upload: (slug: string, files: File[]) => {
+  startImport: (name: string, source: string) =>
+    request<Job>(`/api/datasets/${name}/imports`, { method: "POST", body: json({ source }) }),
+  listImports: (name: string) => request<Job[]>(`/api/datasets/${name}/imports`),
+  upload: (name: string, files: File[]) => {
     const form = new FormData();
     for (const f of files) form.append("files", f, f.webkitRelativePath || f.name);
-    return request<UploadResult>(`/api/projects/${slug}/uploads`, { method: "POST", body: form });
+    return request<UploadResult>(`/api/datasets/${name}/uploads`, { method: "POST", body: form });
   },
 
-  exportProject: (slug: string, body: ExportRequest) =>
-    request<ExportResult>(`/api/projects/${slug}/exports`, { method: "POST", body: json(body) }),
+  cutRelease: (name: string, notes: string) =>
+    request<ReleaseResult>(`/api/datasets/${name}/releases`, { method: "POST", body: json({ notes }) }),
 };

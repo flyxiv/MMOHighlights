@@ -19,7 +19,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useEditor, type Tool, type ViewMode } from "@/lib/editor-store";
-import type { Project } from "@/lib/types";
+import type { Dataset } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 function Tip({ label, keys, children }: { label: string; keys?: string[]; children: React.ReactNode }) {
@@ -62,23 +62,24 @@ export function ViewToggle({ value, onChange }: { value: ViewMode; onChange: (v:
   );
 }
 
-const TOOLS: { tool: Tool; label: string; key: string; Icon: typeof HandIcon; needs?: "detection" | "segmentation" }[] = [
+const TOOLS: { tool: Tool; label: string; key: string; Icon: typeof HandIcon; needs?: "bbox" | "polygon" }[] = [
   { tool: "select", label: "Select and move", key: "V", Icon: MousePointer2Icon },
-  { tool: "box", label: "Box", key: "B", Icon: SquareDashedIcon, needs: "detection" },
-  { tool: "polygon", label: "Polygon", key: "P", Icon: PentagonIcon, needs: "segmentation" },
+  { tool: "box", label: "Box", key: "B", Icon: SquareDashedIcon, needs: "bbox" },
+  { tool: "polygon", label: "Polygon", key: "P", Icon: PentagonIcon, needs: "polygon" },
   { tool: "pan", label: "Pan (or hold Space)", key: "H", Icon: HandIcon },
 ];
 
-export function availableTools(project: Project): Tool[] {
-  return TOOLS.filter((t) => !t.needs || project.tasks.includes(t.needs)).map((t) => t.tool);
+export function availableTools(dataset: Dataset): Tool[] {
+  const types = new Set(Object.values(dataset.tasks).map((s) => s.type));
+  return TOOLS.filter((t) => !t.needs || types.has(t.needs)).map((t) => t.tool);
 }
 
 export function Toolbar({
-  project,
+  dataset,
   onCopyPrevious,
   canCopyPrevious,
 }: {
-  project: Project;
+  dataset: Dataset;
   onCopyPrevious: () => void;
   canCopyPrevious: boolean;
 }) {
@@ -90,8 +91,8 @@ export function Toolbar({
   const viewMode = useEditor((s) => s.viewMode);
   const setViewMode = useEditor((s) => s.setViewMode);
   const { undo, redo, zoomAt, requestFit } = useEditor.getState();
-  const tools = availableTools(project);
-  const hasShapes = project.tasks.includes("detection") || project.tasks.includes("segmentation");
+  const tools = availableTools(dataset);
+  const hasShapes = tools.includes("box") || tools.includes("polygon");
 
   return (
     <div className="flex h-12 shrink-0 items-center gap-1 border-b px-3">
@@ -165,8 +166,8 @@ export function Toolbar({
           </span>
         </TooltipTrigger>
         <TooltipContent className="max-w-xs">
-          No model is connected yet. Predictions can be imported through POST /api/projects/{project.slug}/predictions and
-          show up as dashed suggestions.
+          No model is connected yet. Predictions can be imported through POST /api/datasets/{dataset.name}/predictions
+          and show up as dashed suggestions.
         </TooltipContent>
       </Tooltip>
     </div>

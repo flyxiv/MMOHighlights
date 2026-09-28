@@ -1,130 +1,125 @@
+"""API models. Label data uses the uniform dataset format (datasets/STRUCTURE.md in RaidDesigner):
+labels are {task: {"type": ..., "value": ...}} with class names, and boxes are absolute-pixel xyxy.
+"""
+
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
-Color = Literal["red", "orange", "amber", "green", "cyan", "blue", "violet", "pink"]
-COLORS: tuple[Color, ...] = ("red", "orange", "amber", "green", "cyan", "blue", "violet", "pink")
-Task = Literal["classification", "detection", "segmentation"]
-Status = Literal["todo", "done", "review"]
+LabelType = Literal[
+    "class", "multilabel", "bbox", "polygon", "mask", "keypoints", "span", "scalar", "text", "ref"
+]
+# Types the labeler can edit. Other tasks are carried along untouched and shown read-only.
+EDITABLE: tuple[str, ...] = ("class", "multilabel", "bbox", "polygon")
+Status = Literal["todo", "review", "done", "excluded"]
 
-Name = Field(min_length=1, max_length=60)
-
-
-class LabelClass(BaseModel):
-    # Stable for the project's lifetime; also the YOLO class index.
-    id: int = Field(ge=0)
-    name: str = Name
-    color: Color
+NAME_PATTERN = r"^[a-z0-9][a-z0-9_]{1,63}$"
+TASK_PATTERN = r"^[a-z][a-z0-9_]{0,63}$"
 
 
-class LabelGroup(BaseModel):
-    """An image-level classification question with one answer, e.g. fight_state."""
-
-    name: str = Name
-    options: list[str] = Field(min_length=1, max_length=50)
-
-    @field_validator("options")
-    @classmethod
-    def _unique(cls, v: list[str]) -> list[str]:
-        v = [o.strip() for o in v if o.strip()]
-        if not v:
-            raise ValueError("A label group needs at least one option.")
-        if len(set(v)) != len(v):
-            raise ValueError("Options in a label group must be unique.")
-        return v
+class TaskSpec(BaseModel):
+    type: LabelType
+    unit: str | None = None
+    description: str | None = None
 
 
-class Project(BaseModel):
-    version: int = 1
-    slug: str
-    name: str
-    created_at: datetime
-    tasks: list[Task]
-    classes: list[LabelClass] = []
-    groups: list[LabelGroup] = []
-    image_count: int = 0
+class Card(BaseModel):
+    """Fields for dataset.json that exist before the first release (kept in labeling/project.json)."""
+
+    name: str = Field(pattern=NAME_PATTERN)
+    title: str = Field(min_length=1, max_length=120)
+    description: str | None = None
+    modality: list[Literal["image", "video", "audio", "3d", "text", "tabular"]] = ["image"]
+    license: str = "private"
+    project: str | None = None
+    tags: list[str] = []
 
 
-class ClassIn(BaseModel):
-    # Omit for a new class.
-    id: int | None = Field(default=None, ge=0)
-    name: str = Name
-    color: Color | None = None
+class DatasetCreate(Card):
+    tasks: dict[str, TaskSpec] = Field(min_length=1)
+    classes: dict[str, list[str]] = {}
 
 
-class ProjectCreate(BaseModel):
-    name: str = Name
-    tasks: list[Task] = Field(min_length=1)
-    classes: list[ClassIn] = []
-    groups: list[LabelGroup] = []
-
-
-class ProjectPatch(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=60)
-    tasks: list[Task] | None = Field(default=None, min_length=1)
-    # Full list. Keep a class's id to rename or recolor it; drop it to delete (only if unused).
-    classes: list[ClassIn] | None = None
-    groups: list[LabelGroup] | None = None
+class LabelingPatch(BaseModel):
+    # Full task map: add tasks, or drop ones that are unused and not in a release.
+    tasks: dict[str, TaskSpec] | None = None
+    # Full vocabulary per task. Released classes must stay first and in order; append new ones.
+    classes: dict[str, list[str]] | None = None
 
 
 class Stats(BaseModel):
     total: int
-    done: int
-    review: int
     todo: int
-    class_counts: dict[int, int]
+    review: int
+    done: int
+    excluded: int
+    new: int
+    # Edited here but not marked done: those edits don't go into the next release.
+    edited_not_done: int
+    # task -> class -> number of objects (bbox/polygon) or images (class/multilabel)
+    class_counts: dict[str, dict[str, int]]
 
 
-class ProjectOut(Project):
+class Dataset(BaseModel):
+    name: str
+    title: str
+    description: str | None
+    tasks: dict[str, TaskSpec]
+    classes: dict[str, list[str]]
+    base_release: str | None
+    latest: str | None
+    releases: list[str]
+    next_release: str
     storage_uri: str
     stats: Stats
     pending_sync: int
 
 
-class ProjectSummary(BaseModel):
-    slug: str
+class DatasetSummary(BaseModel):
     name: str
-    tasks: list[Task]
-    created_at: datetime
-    image_count: int
-    classes: int
-    # Known only once the project has been opened on this machine.
-    done: int | None
+    title: str
+    tasks: dict[str, TaskSpec]
+    latest: str | None
+    samples: int | None
+    # False when the dataset exists but nobody has labeled it here yet.
+    labeling: bool
+    created: str | None
 
 
-class LabelObject(BaseModel):
-    id: str = Field(min_length=1, max_length=40)
-    class_id: int = Field(ge=0)
-    type: Literal["box", "polygon"] = "box"
-    # x, y, width, height in image pixels. Derived from the points for polygons.
-    bbox: tuple[float, float, float, float] = (0, 0, 0, 0)
-    points: list[tuple[float, float]] | None = None
-    source: Literal["manual", "model"] = "manual"
-    score: float | None = Field(default=None, ge=0, le=1)
-    # Model suggestions stay unaccepted (dashed, not exported) until confirmed.
-    accepted: bool = True
-
-
-class AnnotationIn(BaseModel):
-    status: Status = "todo"
-    labels: dict[str, str] = {}
-    objects: list[LabelObject] = Field(default=[], max_length=2000)
-
-
-class Annotation(AnnotationIn):
-    file: str
-    updated_at: datetime | None = None
-
-
-class ImageRow(BaseModel):
-    file: str
-    width: int
-    height: int
+class SampleRow(BaseModel):
+    id: str
+    name: str
     status: Status
     objects: int
     suggested: int
-    labels: dict[str, str]
+    # class/multilabel tasks -> value
+    labels: dict[str, str | list[str]]
+    split: str
+    new: bool
+    reviewed: bool
+
+
+class Sample(BaseModel):
+    id: str
+    name: str
+    image: str
+    width: int
+    height: int
+    status: Status
+    labels: dict[str, dict[str, Any]]
+    suggestions: dict[str, dict[str, Any]]
+    split: str
+    new: bool
+    meta: dict[str, Any]
+    updated_at: datetime | None
+
+
+class SampleSave(BaseModel):
+    status: Status = "todo"
+    # Complete labels for the editable tasks. Tasks of other types are kept from the stored sample.
+    labels: dict[str, dict[str, Any]] = {}
+    suggestions: dict[str, dict[str, Any]] = {}
 
 
 class ImportRequest(BaseModel):
@@ -134,7 +129,7 @@ class ImportRequest(BaseModel):
 
 class Job(BaseModel):
     id: str
-    slug: str
+    dataset: str
     state: Literal["running", "done", "failed"] = "running"
     source: str
     total: int = 0
@@ -152,9 +147,9 @@ class UploadResult(BaseModel):
 
 
 class BulkRequest(BaseModel):
-    files: list[str] = Field(min_length=1, max_length=20000)
-    # group -> option, or None to clear.
-    labels: dict[str, str | None] = {}
+    ids: list[str] = Field(min_length=1, max_length=50000)
+    # class task -> value (or list for multilabel), None clears it
+    labels: dict[str, str | list[str] | None] = {}
     status: Status | None = None
 
 
@@ -162,23 +157,14 @@ class BulkResult(BaseModel):
     updated: int
 
 
-class PredictedObject(BaseModel):
-    class_id: int | None = None
-    class_name: str | None = None
-    bbox: tuple[float, float, float, float] | None = None
-    points: list[tuple[float, float]] | None = None
-    score: float | None = Field(default=None, ge=0, le=1)
-
-
 class Prediction(BaseModel):
-    file: str
-    objects: list[PredictedObject] = []
+    id: str
+    # {task: {"type": "bbox", "value": [{"class", "xyxy", "score"}]}} — same shape as labels
+    suggestions: dict[str, dict[str, Any]]
 
 
 class PredictionsIn(BaseModel):
     predictions: list[Prediction] = Field(max_length=100000)
-    # Drop earlier unaccepted suggestions on those images first.
-    replace: bool = True
 
 
 class PredictionsResult(BaseModel):
@@ -186,17 +172,17 @@ class PredictionsResult(BaseModel):
     skipped: int
 
 
-class ExportRequest(BaseModel):
-    format: Literal["yolo", "coco"]
-    # Also export images that aren't marked done.
-    include_unfinished: bool = False
+class ReleaseRequest(BaseModel):
+    notes: str = ""
 
 
-class ExportResult(BaseModel):
+class ReleaseResult(BaseModel):
+    version: str
     uri: str
-    format: str
-    images: int
-    objects: int
+    samples: int
+    reviewed: int
+    splits: dict[str, int]
+    warnings: list[str]
 
 
 class Health(BaseModel):

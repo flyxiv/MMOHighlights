@@ -33,6 +33,8 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 110
 target-version = "py312"
+# Copied verbatim from RaidDesigner; see scripts/vendor_dataset_format.py.
+extend-exclude = ["app/vendor", "tests/vendor"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]

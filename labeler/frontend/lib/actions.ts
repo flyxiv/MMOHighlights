@@ -3,87 +3,88 @@
 import { useEditor, type Draft } from "@/lib/editor-store";
 import { clampBoxToImage, polygonBBox, roundBox, translateObject } from "@/lib/geometry";
 import { newId } from "@/lib/format";
-import type { AnnotationDoc, LabelObject } from "@/lib/types";
+import type { EditorDoc, LabelObject, Point, Status } from "@/lib/types";
 
 const editor = () => useEditor.getState();
 
-function objectFromShape(shape: Draft, classId: number): LabelObject {
+function objectFromShape(shape: Draft, cls: string): LabelObject {
+  const base = { id: newId(), task: shape.task, cls, source: "manual" as const, accepted: true };
   if (shape.type === "polygon") {
-    const points = shape.points.map(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10] as [number, number]);
-    return {
-      id: newId(),
-      class_id: classId,
-      type: "polygon",
-      points,
-      bbox: polygonBBox(points),
-      source: "manual",
-      accepted: true,
-    };
+    const points = shape.points.map(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10] as Point);
+    return { ...base, type: "polygon", points, bbox: polygonBBox(points) };
   }
-  return { id: newId(), class_id: classId, type: "box", bbox: roundBox(shape.bbox), source: "manual", accepted: true };
+  return { ...base, type: "box", bbox: roundBox(shape.bbox) };
 }
 
 /** Add a finished shape: with the active class right away, or via the class picker. */
 export function addShape(shape: Draft) {
-  const { activeClassId, edit, select, setDraft, setLastClass } = editor();
-  if (activeClassId === null) {
+  const { activeTask, activeClass, edit, select, setDraft, setLastClass } = editor();
+  if (activeClass === null || activeTask !== shape.task) {
     setDraft(shape);
     return;
   }
-  const obj = objectFromShape(shape, activeClassId);
+  const obj = objectFromShape(shape, activeClass);
   edit((d) => ({ ...d, objects: [...d.objects, obj] }));
-  setLastClass(activeClassId);
+  setLastClass(shape.task, activeClass);
   select(obj.id);
 }
 
-export function commitDraft(classId: number) {
+export function commitDraft(cls: string) {
   const { draft, edit, select, setDraft, setLastClass } = editor();
   if (!draft) return;
-  const obj = objectFromShape(draft, classId);
+  const obj = objectFromShape(draft, cls);
   edit((d) => ({ ...d, objects: [...d.objects, obj] }));
-  setLastClass(classId);
+  setLastClass(draft.task, cls);
   setDraft(null);
   select(obj.id);
 }
 
-export function finishPolygon() {
+export function finishPolygon(task: string) {
   const { polyPoints, setPolyPoints } = editor();
   if (polyPoints.length < 3) return false;
   setPolyPoints([]);
-  addShape({ type: "polygon", points: polyPoints });
+  addShape({ type: "polygon", points: polyPoints, task });
   return true;
 }
 
 /** Number keys and class rows: re-class the selected object, or pick the class for new shapes. */
-export function applyClass(classId: number) {
-  const { selectedId, doc, edit, activeClassId, setActiveClass, setLastClass } = editor();
+export function applyClass(task: string, cls: string) {
+  const { selectedId, doc, edit, activeTask, activeClass, setActiveTask, setActiveClass, setLastClass } = editor();
   const selected = doc?.objects.find((o) => o.id === selectedId);
-  if (selected) {
+  if (selected && selected.task === task) {
     edit((d) => ({
       ...d,
-      objects: d.objects.map((o) => (o.id === selected.id ? { ...o, class_id: classId, accepted: true } : o)),
+      objects: d.objects.map((o) => (o.id === selected.id ? { ...o, cls, accepted: true } : o)),
     }));
-    setLastClass(classId);
+    setLastClass(task, cls);
     return;
   }
-  setActiveClass(activeClassId === classId ? null : classId);
+  if (activeTask !== task) setActiveTask(task);
+  setActiveClass(activeTask === task && activeClass === cls ? null : cls);
 }
 
-export function toggleLabel(group: string, value: string) {
+/** Toggle an image-level class (class task) or tag (multilabel task). */
+export function toggleChoice(task: string, value: string, multi: boolean) {
   editor().edit((d) => {
-    const labels = { ...d.labels };
-    if (labels[group] === value) delete labels[group];
-    else labels[group] = value;
-    return { ...d, labels };
+    const choices = { ...d.choices };
+    const cur = choices[task];
+    if (multi) {
+      const list = Array.isArray(cur) ? cur : [];
+      const next = list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+      if (next.length) choices[task] = next;
+      else delete choices[task];
+    } else if (cur === value) delete choices[task];
+    else choices[task] = value;
+    return { ...d, choices };
   });
 }
 
-export function setLabel(group: string, value: string | null) {
+export function setChoice(task: string, value: string | null) {
   editor().edit((d) => {
-    const labels = { ...d.labels };
-    if (value === null) delete labels[group];
-    else labels[group] = value;
-    return { ...d, labels };
+    const choices = { ...d.choices };
+    if (value === null) delete choices[task];
+    else choices[task] = value;
+    return { ...d, choices };
   });
 }
 
@@ -127,8 +128,8 @@ export function setSelectedBox(bbox: [number, number, number, number], iw: numbe
   }));
 }
 
-export function setStatus(status: AnnotationDoc["status"]) {
-  editor().edit((d) => (d.status === status ? d : { ...d, status }));
+export function setStatus(status: Status) {
+  editor().edit((d: EditorDoc) => (d.status === status ? d : { ...d, status }));
 }
 
 /** Append another image's accepted objects (new ids), e.g. from the previous frame. */

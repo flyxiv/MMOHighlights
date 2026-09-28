@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     # Where projects live: "gs://bucket[/prefix]" or a local folder (for development and tests).
     # Each project is a folder here holding project.json, manifest.json, images/, annotations/, exports/.
-    storage: str = "gs://ai-datasets-jyn"
+    storage: str = "gs://ai_datasets_jyn"
 
     # Local copies of images and thumbnails, plus a SQLite index of every label. The bucket is the
     # source of truth; the index makes filtering and saving instant and queues writes to the bucket.

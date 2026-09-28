@@ -32,7 +32,7 @@ const GROUPS: [string, [string, string[][]][]][][] = [
       "Labeling",
       [
         ["Set class (or next shape's class)", [["1–9"]]],
-        ["Set image class", [["Q–I"]]],
+        ["Set image class / tag", [["Q–I"]]],
         ["Accept suggestions", [["Enter"]]],
         ["Delete object", [["Del"]]],
         ["Move object 1 px / 10 px", [["←↑→↓"], ["⇧", "←"]]],
@@ -46,6 +46,7 @@ const GROUPS: [string, [string, string[][]][]][][] = [
         ["Save & next", [["D"]]],
         ["Previous", [["A"]]],
         ["Flag for review", [["F"]]],
+        ["Exclude from releases", [["X"]]],
         ["Grid view", [["G"]]],
         ["Search", [["/"]]],
       ],

@@ -8,10 +8,11 @@ import { toast } from "sonner";
 import { GridView } from "@/components/labeler/grid-view";
 import { ImageList, type StatusFilter } from "@/components/labeler/image-list";
 import { EMPTY_SOURCE, ImportPanel, runImport, sourceReady, type ImportSource } from "@/components/labeler/import-panel";
-import { Inspector } from "@/components/labeler/inspector";
-import { LabelCanvas } from "@/components/labeler/label-canvas";
+import { currentShapeTask, hotkeyTask, Inspector } from "@/components/labeler/inspector";
+import { drawTaskFor, LabelCanvas } from "@/components/labeler/label-canvas";
 import { NavBar } from "@/components/labeler/nav-bar";
-import { NewProjectDialog } from "@/components/labeler/new-project-dialog";
+import { NewDatasetDialog } from "@/components/labeler/new-dataset-dialog";
+import { ReleaseDialog } from "@/components/labeler/release-dialog";
 import { ShortcutsDialog } from "@/components/labeler/shortcuts-dialog";
 import { availableTools, Toolbar } from "@/components/labeler/toolbar";
 import { TopBar } from "@/components/labeler/top-bar";
@@ -27,14 +28,15 @@ import {
   nudgeSelected,
   pasteObjects,
   setStatus,
-  toggleLabel,
+  toggleChoice,
 } from "@/lib/actions";
 import { errorMessage } from "@/lib/api";
+import { docFromSample, taskGroups } from "@/lib/convert";
 import { isTyping, useEditor, type Tool } from "@/lib/editor-store";
-import { CHIP_LIMIT, formatNumber, GROUP_KEYS } from "@/lib/format";
-import { annotationQuery, queryKeys, useImages, useImports, useProject } from "@/lib/queries";
+import { formatNumber, GROUP_KEYS } from "@/lib/format";
+import { queryKeys, sampleQuery, useDataset, useImports, useSamples } from "@/lib/queries";
 import { useSession } from "@/lib/use-session";
-import type { ImageRow, Job } from "@/lib/types";
+import type { Job, Status } from "@/lib/types";
 
 const TOOL_KEYS: Record<string, Tool> = { v: "select", b: "box", p: "polygon", h: "pan" };
 
@@ -59,7 +61,7 @@ function ImportProgress({ jobs }: { jobs: Job[] }) {
   );
 }
 
-function AddImages({ slug }: { slug: string }) {
+function AddImages({ name }: { name: string }) {
   const qc = useQueryClient();
   const [source, setSource] = useState<ImportSource>(EMPTY_SOURCE);
   const [busy, setBusy] = useState(false);
@@ -67,13 +69,13 @@ function AddImages({ slug }: { slug: string }) {
   const start = async () => {
     setBusy(true);
     try {
-      const r = await runImport(slug, source, (d, t) => setProgress([d, t]));
+      const r = await runImport(name, source, (d, t) => setProgress([d, t]));
       if (r) {
         toast.success(`Uploaded ${formatNumber(r.added)} images`, { description: r.errors[0] });
-        void qc.invalidateQueries({ queryKey: queryKeys.images(slug) });
-        void qc.invalidateQueries({ queryKey: queryKeys.project(slug) });
+        void qc.invalidateQueries({ queryKey: queryKeys.samples(name) });
+        void qc.invalidateQueries({ queryKey: queryKeys.dataset(name) });
       } else {
-        void qc.invalidateQueries({ queryKey: queryKeys.imports(slug) });
+        void qc.invalidateQueries({ queryKey: queryKeys.imports(name) });
       }
       setSource(EMPTY_SOURCE);
     } catch (e) {
@@ -89,7 +91,8 @@ function AddImages({ slug }: { slug: string }) {
         <div>
           <h2 className="font-semibold">Add images</h2>
           <p className="text-sm text-muted-foreground">
-            They&apos;re copied into this project&apos;s folder in the bucket, then show up in the list as they arrive.
+            They&apos;re stored under <span className="font-mono">raw/labeler/</span>, named by content, and show up in
+            the list as they arrive.
           </p>
         </div>
         <ImportPanel value={source} onChange={setSource} />
@@ -102,64 +105,70 @@ function AddImages({ slug }: { slug: string }) {
   );
 }
 
-export function LabelingPage({ slug }: { slug: string }) {
+export function LabelingPage({ name }: { name: string }) {
   const qc = useQueryClient();
-  const { data: project, error: projectError } = useProject(slug);
-  const { data: images } = useImages(slug);
-  const { data: jobs } = useImports(slug);
-  const { goTo, flush, loadError } = useSession(slug);
+  const { data: dataset, error: datasetError } = useDataset(name);
+  const { data: samples } = useSamples(name);
+  const { data: jobs } = useImports(name);
+  const { goTo, flush, current, loadError } = useSession(dataset);
 
   const file = useEditor((s) => s.file);
   const viewMode = useEditor((s) => s.viewMode);
   const [tab, setTab] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
   const [newOpen, setNewOpen] = useState(false);
+  const [releaseOpen, setReleaseOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Fresh editor state per project.
+  // Fresh editor state per dataset.
   useEffect(() => {
-    useEditor.setState({ file: null, doc: null, viewMode: "single", activeClassId: null, lastClassId: null, tool: "select" });
-  }, [slug]);
+    useEditor.setState({
+      file: null,
+      doc: null,
+      viewMode: "single",
+      activeTask: null,
+      activeClass: null,
+      lastClass: null,
+      tool: "select",
+    });
+  }, [name]);
 
-  const all = useMemo(() => images ?? [], [images]);
-  const counts = useMemo(
-    () => ({
-      all: all.length,
-      todo: all.filter((r) => r.status === "todo").length,
-      review: all.filter((r) => r.status === "review").length,
-    }),
-    [all],
-  );
+  const all = useMemo(() => samples ?? [], [samples]);
+  const counts = useMemo(() => {
+    const c = { all: all.length, todo: 0, review: 0, done: 0, excluded: 0 };
+    for (const r of all) c[r.status]++;
+    return c;
+  }, [all]);
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return all.filter(
       (r) =>
-        // The open image stays in the list after D marks it done, so neighbours stay stable.
-        (r.file === file || tab === "all" || r.status === tab) && (!q || r.file.toLowerCase().includes(q)),
+        // The open sample stays in the list after D marks it done, so neighbours stay stable.
+        (r.id === file || tab === "all" || r.status === tab) &&
+        (!q || r.name.toLowerCase().includes(q) || r.id.includes(q)),
     );
   }, [all, tab, search, file]);
-  const index = file ? filtered.findIndex((r) => r.file === file) : -1;
-  const current: ImageRow | null = (file && all.find((r) => r.file === file)) || null;
+  const index = file ? filtered.findIndex((r) => r.id === file) : -1;
+  const image = current && current.id === file ? current : null;
 
   const open = useCallback(
-    (f: string) => {
-      const i = filtered.findIndex((r) => r.file === f);
-      const ahead = i >= 0 ? filtered.slice(i + 1, i + 3).map((r) => r.file) : [];
-      return goTo(f, ahead);
+    (id: string) => {
+      const i = filtered.findIndex((r) => r.id === id);
+      const ahead = i >= 0 ? filtered.slice(i + 1, i + 3).map((r) => r.id) : [];
+      return goTo(id, ahead);
     },
     [filtered, goTo],
   );
 
-  // Open the image from the URL, else the first one still to do.
+  // Open the sample from the URL, else the first one still to do.
   useEffect(() => {
-    if (!images?.length || file) return;
-    const wanted = new URL(window.location.href).searchParams.get("image");
-    const first =
-      images.find((r) => r.file === wanted) ?? images.find((r) => r.status === "todo") ?? images[0];
-    void open(first.file);
-  }, [images, file, open]);
+    if (!samples?.length || !dataset || file) return;
+    const wanted = new URL(window.location.href).searchParams.get("sample");
+    const first = samples.find((r) => r.id === wanted) ?? samples.find((r) => r.status === "todo") ?? samples[0];
+    void open(first.id);
+  }, [samples, dataset, file, open]);
 
-  // Back from the grid: bulk edits may have changed the open image.
+  // Back from the grid: bulk edits may have changed the open sample.
   const prevMode = useRef(viewMode);
   useEffect(() => {
     if (prevMode.current === "grid" && viewMode === "single" && file) void goTo(file);
@@ -172,27 +181,27 @@ export function LabelingPage({ slug }: { slug: string }) {
     for (const j of jobs ?? []) {
       if (j.state === "running") running.current.add(j.id);
       else if (running.current.delete(j.id)) {
-        void qc.invalidateQueries({ queryKey: queryKeys.images(slug) });
-        void qc.invalidateQueries({ queryKey: queryKeys.project(slug) });
+        void qc.invalidateQueries({ queryKey: queryKeys.samples(name) });
+        void qc.invalidateQueries({ queryKey: queryKeys.dataset(name) });
         if (j.state === "failed") toast.error(`Import failed: ${j.message}`);
         else toast.success(j.message ?? "Import finished", { description: j.errors[0] });
       }
     }
     // While importing, poll the list so new images appear.
-    if (running.current.size) void qc.invalidateQueries({ queryKey: queryKeys.images(slug) });
-  }, [jobs, qc, slug]);
+    if (running.current.size) void qc.invalidateQueries({ queryKey: queryKeys.samples(name) });
+  }, [jobs, qc, name]);
 
   const next = index >= 0 ? filtered[index + 1] : undefined;
   const prev = index > 0 ? filtered[index - 1] : undefined;
   const prevInOrder = useMemo(() => {
-    const i = file ? all.findIndex((r) => r.file === file) : -1;
+    const i = file ? all.findIndex((r) => r.id === file) : -1;
     return i > 0 ? all[i - 1] : undefined;
   }, [all, file]);
 
   const saveAndNext = useCallback(async () => {
     const { doc } = useEditor.getState();
     if (doc && doc.status !== "done") setStatus("done");
-    if (next) await open(next.file);
+    if (next) await open(next.id);
     else {
       await flush();
       toast("That was the last image in this list.");
@@ -200,34 +209,34 @@ export function LabelingPage({ slug }: { slug: string }) {
   }, [next, open, flush]);
 
   const goPrev = useCallback(() => {
-    if (prev) void open(prev.file);
+    if (prev) void open(prev.id);
   }, [prev, open]);
 
-  const toggleFlag = useCallback(() => {
-    const status = useEditor.getState().doc?.status;
-    setStatus(status === "review" ? "todo" : "review");
+  const toggleStatus = useCallback((status: Status) => {
+    const cur = useEditor.getState().doc?.status;
+    setStatus(cur === status ? "todo" : status);
   }, []);
 
   const copyPrevious = useCallback(async () => {
-    if (!prevInOrder || !current) return;
+    if (!prevInOrder || !image || !dataset) return;
     try {
-      const ann = await qc.fetchQuery(annotationQuery(slug, prevInOrder.file));
-      const n = pasteObjects(ann.objects, current.width, current.height);
-      toast(n ? `Copied ${n} object${n === 1 ? "" : "s"} from ${prevInOrder.file}` : `${prevInOrder.file} has no objects`);
+      const sample = await qc.fetchQuery(sampleQuery(name, prevInOrder.id));
+      const n = pasteObjects(docFromSample(sample, dataset).objects, image.width, image.height);
+      toast(n ? `Copied ${n} object${n === 1 ? "" : "s"} from ${prevInOrder.name}` : `${prevInOrder.name} has no objects`);
     } catch (e) {
       toast.error(errorMessage(e));
     }
-  }, [prevInOrder, current, qc, slug]);
+  }, [prevInOrder, image, dataset, qc, name]);
 
   // ---- keyboard
 
   useEffect(() => {
-    if (!project) return;
-    const tools = availableTools(project);
-    const chipGroup = project.groups.find((g) => g.options.length <= CHIP_LIMIT);
+    if (!dataset) return;
+    const tools = availableTools(dataset);
+    const keyTask = hotkeyTask(dataset);
     const onKey = (e: KeyboardEvent) => {
       const s = useEditor.getState();
-      if (isTyping(e.target) || s.shortcutsOpen || newOpen || s.draft) return;
+      if (isTyping(e.target) || s.shortcutsOpen || newOpen || releaseOpen || s.draft) return;
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
 
       if (k === "?" || (e.shiftKey && k === "/")) {
@@ -256,14 +265,20 @@ export function LabelingPage({ slug }: { slug: string }) {
 
       if (TOOL_KEYS[k] && tools.includes(TOOL_KEYS[k])) {
         s.setTool(TOOL_KEYS[k]);
+        // B/P switch the classes list to a task of the matching type.
+        const t = drawTaskFor(dataset, TOOL_KEYS[k], s.activeTask);
+        if (t && t !== s.activeTask) s.setActiveTask(t);
       } else if (/^[1-9]$/.test(k)) {
-        const c = project.classes[Number(k) - 1];
-        if (c) applyClass(c.id);
-      } else if (chipGroup && (GROUP_KEYS as readonly string[]).includes(k)) {
-        const opt = chipGroup.options[GROUP_KEYS.indexOf(k as (typeof GROUP_KEYS)[number])];
-        if (opt) toggleLabel(chipGroup.name, opt);
+        const selected = s.doc?.objects.find((o) => o.id === s.selectedId);
+        const task = selected?.task ?? currentShapeTask(dataset, s.activeTask);
+        const cls = task ? dataset.classes[task]?.[Number(k) - 1] : undefined;
+        if (task && cls) applyClass(task, cls);
+      } else if (keyTask && (GROUP_KEYS as readonly string[]).includes(k)) {
+        const cls = dataset.classes[keyTask]?.[GROUP_KEYS.indexOf(k as (typeof GROUP_KEYS)[number])];
+        if (cls) toggleChoice(keyTask, cls, dataset.tasks[keyTask].type === "multilabel");
       } else if (k === "Enter") {
-        if (s.polyPoints.length) finishPolygon();
+        const task = drawTaskFor(dataset, "polygon", s.activeTask);
+        if (s.polyPoints.length && task) finishPolygon(task);
         else acceptSuggestions();
       } else if (k === "Escape") {
         if (s.polyPoints.length) s.setPolyPoints([]);
@@ -273,11 +288,12 @@ export function LabelingPage({ slug }: { slug: string }) {
         e.preventDefault();
         if (s.polyPoints.length) s.setPolyPoints(s.polyPoints.slice(0, -1));
         else deleteSelected();
-      } else if (k.startsWith("Arrow") && current && s.selectedId) {
+      } else if (k.startsWith("Arrow") && image && s.selectedId) {
         e.preventDefault();
         const step = e.shiftKey ? 10 : 1;
-        const [dx, dy] = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[k] ?? [0, 0];
-        nudgeSelected(dx, dy, current.width, current.height);
+        const [dx, dy] =
+          { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[k] ?? [0, 0];
+        nudgeSelected(dx, dy, image.width, image.height);
       } else if (k === "Tab") {
         e.preventDefault();
         cycleSelection(e.shiftKey ? -1 : 1);
@@ -286,7 +302,9 @@ export function LabelingPage({ slug }: { slug: string }) {
       } else if (k === "a" && once) {
         goPrev();
       } else if (k === "f" && once) {
-        toggleFlag();
+        toggleStatus("review");
+      } else if (k === "x" && once) {
+        toggleStatus("excluded");
       } else if (k === "c" && once) {
         void copyPrevious();
       } else if (k === "/") {
@@ -304,21 +322,21 @@ export function LabelingPage({ slug }: { slug: string }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [project, current, newOpen, saveAndNext, goPrev, toggleFlag, copyPrevious]);
+  }, [dataset, image, newOpen, releaseOpen, saveAndNext, goPrev, toggleStatus, copyPrevious]);
 
   // ---- render
 
-  if (projectError) {
+  if (datasetError) {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-3 text-sm">
-        <p>{errorMessage(projectError)}</p>
+        <p>{errorMessage(datasetError)}</p>
         <Button variant="outline" asChild>
-          <Link href="/">All projects</Link>
+          <Link href="/">All datasets</Link>
         </Button>
       </div>
     );
   }
-  if (!project || !images) {
+  if (!dataset || !samples) {
     return (
       <div className="flex h-screen flex-col">
         <div className="flex h-14 items-center gap-3 border-b px-6">
@@ -326,7 +344,7 @@ export function LabelingPage({ slug }: { slug: string }) {
         </div>
         <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
           <LoaderCircleIcon className="size-4 animate-spin" />
-          Loading labels from the bucket…
+          Loading the dataset from the bucket…
         </div>
       </div>
     );
@@ -334,24 +352,24 @@ export function LabelingPage({ slug }: { slug: string }) {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <TopBar project={project} onNewProject={() => setNewOpen(true)} />
+      <TopBar dataset={dataset} onNewDataset={() => setNewOpen(true)} onRelease={() => setReleaseOpen(true)} />
       <ImportProgress jobs={jobs ?? []} />
       {viewMode === "grid" ? (
         <GridView
-          project={project}
+          dataset={dataset}
           rows={filtered}
           counts={counts}
           tab={tab}
           onTab={setTab}
-          onOpen={(f) => {
+          onOpen={(id) => {
             useEditor.getState().setViewMode("single");
-            void open(f);
+            void open(id);
           }}
         />
       ) : (
         <div className="flex min-h-0 flex-1">
           <ImageList
-            slug={slug}
+            dataset={name}
             rows={filtered}
             total={all.length}
             counts={counts}
@@ -360,30 +378,31 @@ export function LabelingPage({ slug }: { slug: string }) {
             search={search}
             onSearch={setSearch}
             currentFile={file}
-            onOpen={(f) => void open(f)}
-            firstGroup={project.groups[0]?.name}
+            onOpen={(id) => void open(id)}
+            firstTask={taskGroups(dataset.tasks).choices[0]}
             searchRef={searchRef}
           />
           <main className="flex min-w-0 flex-1 flex-col">
-            <Toolbar project={project} onCopyPrevious={() => void copyPrevious()} canCopyPrevious={!!prevInOrder} />
+            <Toolbar dataset={dataset} onCopyPrevious={() => void copyPrevious()} canCopyPrevious={!!prevInOrder} />
             {all.length === 0 ? (
               (jobs ?? []).some((j) => j.state === "running") ? (
                 <div className="flex flex-1 items-center justify-center bg-canvas text-sm text-muted-foreground">
                   Images appear here as the import copies them…
                 </div>
               ) : (
-                <AddImages slug={slug} />
+                <AddImages name={name} />
               )
-            ) : current ? (
+            ) : image ? (
               <>
-                <LabelCanvas project={project} image={current} />
+                <LabelCanvas dataset={dataset} image={image} />
                 <NavBar
-                  image={current}
+                  image={image}
                   position={index + 1}
                   count={filtered.length}
                   onPrev={goPrev}
                   onNext={() => void saveAndNext()}
-                  onFlag={toggleFlag}
+                  onFlag={() => toggleStatus("review")}
+                  onExclude={() => toggleStatus("excluded")}
                 />
               </>
             ) : (
@@ -392,11 +411,12 @@ export function LabelingPage({ slug }: { slug: string }) {
               </div>
             )}
           </main>
-          <Inspector project={project} image={current} />
+          <Inspector dataset={dataset} sample={image} />
         </div>
       )}
       <ShortcutsDialog />
-      <NewProjectDialog open={newOpen} onOpenChange={setNewOpen} />
+      <NewDatasetDialog open={newOpen} onOpenChange={setNewOpen} />
+      <ReleaseDialog dataset={dataset} open={releaseOpen} onOpenChange={setReleaseOpen} flush={flush} />
     </div>
   );
 }

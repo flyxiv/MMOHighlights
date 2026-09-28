@@ -70,6 +70,31 @@ def create_app(settings: Settings | None = None, *, store: BlobStore | None = No
     app.add_exception_handler(NotFound, handler(404))
     app.add_exception_handler(Conflict, handler(409))
     app.add_exception_handler(Invalid, handler(422))
+
+    # Bucket access problems get an actionable message instead of a bare 500.
+    from google.api_core.exceptions import Forbidden
+    from google.auth.exceptions import DefaultCredentialsError, RefreshError
+
+    def no_access(_request: Request, exc: Exception) -> JSONResponse:
+        if isinstance(exc, Forbidden):
+            detail = f"The signed-in Google account can't access {settings.storage}."
+        else:
+            detail = "No Google Cloud login on this PC. Run: gcloud.cmd auth application-default login"
+        log.warning("Bucket access failed: %s", exc)
+        return JSONResponse({"detail": detail}, status_code=503)
+
+    for exc_type in (DefaultCredentialsError, RefreshError, Forbidden):
+        app.add_exception_handler(exc_type, no_access)
+
+    from google.api_core.exceptions import NotFound as GcsNotFound
+
+    def gcs_not_found(_request: Request, exc: Exception) -> JSONResponse:
+        if "bucket does not exist" in str(exc):
+            detail = f"{settings.storage} doesn't exist. Create the bucket first."
+            return JSONResponse({"detail": detail}, status_code=503)
+        return JSONResponse({"detail": "Not found in the bucket."}, status_code=404)
+
+    app.add_exception_handler(GcsNotFound, gcs_not_found)
     app.include_router(api.router)
     return app
 

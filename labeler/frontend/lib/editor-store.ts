@@ -1,13 +1,13 @@
 "use client";
 
 import { create } from "zustand";
-import type { AnnotationDoc, BBox, Point } from "@/lib/types";
+import type { BBox, EditorDoc, Point } from "@/lib/types";
 
 export type Tool = "select" | "box" | "polygon" | "pan";
 export type ViewMode = "single" | "grid";
 
 /** A shape that has been drawn but has no class yet (the class picker is open). */
-export type Draft = { type: "box"; bbox: BBox } | { type: "polygon"; points: Point[] };
+export type Draft = { type: "box"; bbox: BBox; task: string } | { type: "polygon"; points: Point[]; task: string };
 
 export interface View {
   scale: number;
@@ -21,20 +21,22 @@ export const MAX_SCALE = 32;
 
 interface EditorState {
   file: string | null;
-  doc: AnnotationDoc | null;
+  doc: EditorDoc | null;
   /** Bumped on every edit; the autosave compares it with savedVersion. */
   version: number;
   savedVersion: number;
   saving: boolean;
   saveError: string | null;
-  past: AnnotationDoc[];
-  future: AnnotationDoc[];
+  past: EditorDoc[];
+  future: EditorDoc[];
 
   selectedId: string | null;
   tool: Tool;
-  /** Class given to new shapes without asking. Null opens the class picker after drawing. */
-  activeClassId: number | null;
-  lastClassId: number | null;
+  /** Shape task that number keys and the classes list refer to. */
+  activeTask: string | null;
+  /** Class (in activeTask) given to new shapes without asking. Null opens the class picker. */
+  activeClass: string | null;
+  lastClass: { task: string; cls: string } | null;
   draft: Draft | null;
   /** Points of a polygon being drawn (polygon tool). */
   polyPoints: Point[];
@@ -50,8 +52,8 @@ interface EditorState {
   viewMode: ViewMode;
   shortcutsOpen: boolean;
 
-  load: (file: string, doc: AnnotationDoc) => void;
-  edit: (fn: (doc: AnnotationDoc) => AnnotationDoc) => void;
+  load: (file: string, doc: EditorDoc) => void;
+  edit: (fn: (doc: EditorDoc) => EditorDoc) => void;
   undo: () => void;
   redo: () => void;
   markSaved: (version: number) => void;
@@ -59,8 +61,9 @@ interface EditorState {
 
   select: (id: string | null) => void;
   setTool: (tool: Tool) => void;
-  setActiveClass: (id: number | null) => void;
-  setLastClass: (id: number) => void;
+  setActiveTask: (task: string | null) => void;
+  setActiveClass: (cls: string | null) => void;
+  setLastClass: (task: string, cls: string) => void;
   setDraft: (draft: Draft | null) => void;
   setPolyPoints: (points: Point[]) => void;
   toggleHidden: (id: string) => void;
@@ -87,8 +90,9 @@ export const useEditor = create<EditorState>((set, get) => ({
   future: [],
   selectedId: null,
   tool: "select",
-  activeClassId: null,
-  lastClassId: null,
+  activeTask: null,
+  activeClass: null,
+  lastClass: null,
   draft: null,
   polyPoints: [],
   hidden: {},
@@ -152,8 +156,10 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   select: (id) => set({ selectedId: id }),
   setTool: (tool) => set({ tool, draft: null, polyPoints: [] }),
-  setActiveClass: (id) => set({ activeClassId: id }),
-  setLastClass: (id) => set({ lastClassId: id }),
+  setActiveTask: (activeTask) =>
+    set((s) => (s.activeTask === activeTask ? {} : { activeTask, activeClass: null })),
+  setActiveClass: (activeClass) => set({ activeClass }),
+  setLastClass: (task, cls) => set({ lastClass: { task, cls } }),
   setDraft: (draft) => set({ draft }),
   setPolyPoints: (polyPoints) => set({ polyPoints }),
   toggleHidden: (id) =>

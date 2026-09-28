@@ -38,8 +38,15 @@ class BlobStore(ABC):
         """Every blob under prefix, recursively."""
 
     @abstractmethod
-    def list_dirs(self) -> list[str]:
-        """Top-level folder names."""
+    def list_dirs(self, prefix: str = "") -> list[str]:
+        """Names of the folders directly under prefix ("" = the root)."""
+
+    def stat(self, name: str) -> BlobInfo | None:
+        """One blob's info, or None if it doesn't exist."""
+        for b in self.list_blobs(name):
+            if b.name == name:
+                return b
+        return None
 
     def uri(self, name: str = "") -> str:
         return f"{self.root_uri.rstrip('/')}/{name}" if name else self.root_uri
@@ -91,10 +98,18 @@ class LocalStore(BlobStore):
         out.sort(key=lambda b: b.name)
         return out
 
-    def list_dirs(self) -> list[str]:
-        if not self.root.is_dir():
+    def list_dirs(self, prefix: str = "") -> list[str]:
+        base = self._path(prefix.strip("/")) if prefix.strip("/") else self.root
+        if not base.is_dir():
             return []
-        return sorted(p.name for p in self.root.iterdir() if p.is_dir())
+        return sorted(p.name for p in base.iterdir() if p.is_dir())
+
+    def stat(self, name: str) -> BlobInfo | None:
+        path = self._path(name)
+        if not path.is_file():
+            return None
+        st = path.stat()
+        return BlobInfo(name, str(st.st_mtime_ns), st.st_size)
 
 
 class GcsStore(BlobStore):
@@ -149,11 +164,16 @@ class GcsStore(BlobStore):
             out.append(BlobInfo(b.name[len(self.prefix) :], str(b.generation), b.size or 0))
         return out
 
-    def list_dirs(self) -> list[str]:
-        it = self.client().list_blobs(self.bucket_name, prefix=self.prefix, delimiter="/")
+    def list_dirs(self, prefix: str = "") -> list[str]:
+        full = self.prefix + (prefix.strip("/") + "/" if prefix.strip("/") else "")
+        it = self.client().list_blobs(self.bucket_name, prefix=full, delimiter="/")
         for _ in it:
             pass  # prefixes are filled in while paging
-        return sorted(p[len(self.prefix) :].rstrip("/") for p in it.prefixes)
+        return sorted(p[len(full) :].rstrip("/") for p in it.prefixes)
+
+    def stat(self, name: str) -> BlobInfo | None:
+        blob = self.client().bucket(self.bucket_name).get_blob(self.prefix + name)
+        return BlobInfo(name, str(blob.generation), blob.size or 0) if blob else None
 
 
 def make_store(spec: str) -> BlobStore:

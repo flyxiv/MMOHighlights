@@ -13,7 +13,8 @@ import { api, errorMessage, thumbUrl } from "@/lib/api";
 import { isTyping, useEditor } from "@/lib/editor-store";
 import { formatNumber, GROUP_KEYS } from "@/lib/format";
 import { queryKeys } from "@/lib/queries";
-import type { ImageRow, Project, Status } from "@/lib/types";
+import { taskGroups } from "@/lib/convert";
+import type { Dataset, SampleRow, Status } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const MIN_TILE = 200;
@@ -21,15 +22,15 @@ const GAP = 12;
 const FOOTER = 33;
 
 export function GridView({
-  project,
+  dataset,
   rows,
   counts,
   tab,
   onTab,
   onOpen,
 }: {
-  project: Project;
-  rows: ImageRow[];
+  dataset: Dataset;
+  rows: SampleRow[];
   counts: Record<StatusFilter, number>;
   tab: StatusFilter;
   onTab: (t: StatusFilter) => void;
@@ -37,7 +38,10 @@ export function GridView({
 }) {
   const qc = useQueryClient();
   const setViewMode = useEditor((s) => s.setViewMode);
-  const groups = project.groups;
+  // Bulk keys set class tasks (one answer per image).
+  const groups = taskGroups(dataset.tasks)
+    .choices.filter((t) => dataset.tasks[t].type === "class")
+    .map((t) => ({ name: t, options: dataset.classes[t] ?? [] }));
   const [groupName, setGroupName] = useState(groups[0]?.name ?? "");
   const group = groups.find((g) => g.name === groupName) ?? groups[0];
   const [valueFilter, setValueFilter] = useState<string>("__any");
@@ -77,12 +81,12 @@ export function GridView({
   // ---- selection and bulk edits
 
   const click = (e: React.MouseEvent, index: number) => {
-    const file = visible[index].file;
+    const file = visible[index].id;
     setSelected((cur) => {
       if (e.shiftKey && anchor.current !== null) {
         const [a, b] = [Math.min(anchor.current, index), Math.max(anchor.current, index)];
         const next = new Set(e.ctrlKey || e.metaKey ? cur : []);
-        for (let i = a; i <= b; i++) next.add(visible[i].file);
+        for (let i = a; i <= b; i++) next.add(visible[i].id);
         return next;
       }
       anchor.current = index;
@@ -100,15 +104,15 @@ export function GridView({
     const files = [...selected];
     if (!files.length) return;
     try {
-      await api.bulk(project.slug, { files, labels, status });
+      await api.bulk(dataset.name, { ids: files, labels, status });
     } catch (e) {
       toast.error(errorMessage(e));
       return;
     }
     const set = new Set(files);
-    qc.setQueryData<ImageRow[]>(queryKeys.images(project.slug), (old) =>
+    qc.setQueryData<SampleRow[]>(queryKeys.samples(dataset.name), (old) =>
       old?.map((r) => {
-        if (!set.has(r.file)) return r;
+        if (!set.has(r.id)) return r;
         const next = { ...r.labels };
         for (const [k, v] of Object.entries(labels)) {
           if (v === null) delete next[k];
@@ -117,10 +121,10 @@ export function GridView({
         return { ...r, labels: next, status: status ?? r.status };
       }),
     );
-    for (const f of files) qc.removeQueries({ queryKey: queryKeys.annotation(project.slug, f) });
-    void qc.invalidateQueries({ queryKey: queryKeys.project(project.slug) });
+    for (const f of files) qc.removeQueries({ queryKey: queryKeys.sample(dataset.name, f) });
+    void qc.invalidateQueries({ queryKey: queryKeys.dataset(dataset.name) });
     toast.success(
-      `${status === "review" ? "Flagged" : "Updated"} ${formatNumber(files.length)} image${files.length === 1 ? "" : "s"}`,
+      `${status === "review" ? "Flagged" : status === "done" ? "Marked done:" : "Updated"} ${formatNumber(files.length)} image${files.length === 1 ? "" : "s"}`,
     );
   };
 
@@ -133,7 +137,7 @@ export function GridView({
       const k = e.key.toLowerCase();
       if ((e.ctrlKey || e.metaKey) && k === "a") {
         e.preventDefault();
-        setSelected(new Set(visible.map((r) => r.file)));
+        setSelected(new Set(visible.map((r) => r.id)));
       } else if (k === "escape") {
         setSelected(new Set());
       } else if (e.ctrlKey || e.metaKey || e.altKey) {
@@ -148,9 +152,11 @@ export function GridView({
         void applyRef.current({ [group.name]: null });
       } else if (k === "f") {
         void applyRef.current({}, "review");
+      } else if (k === "d") {
+        void applyRef.current({}, "done");
       } else if (k === "enter" && selected.size) {
-        const first = visible.find((r) => selected.has(r.file));
-        if (first) onOpen(first.file);
+        const first = visible.find((r) => selected.has(r.id));
+        if (first) onOpen(first.id);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -205,7 +211,7 @@ export function GridView({
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto bg-canvas">
         {!group ? (
           <p className="p-8 text-center text-sm text-muted-foreground">
-            Add a label group in the inspector (single view) to classify images in bulk here.
+            Add a class task in the inspector (single view) to classify images in bulk here.
           </p>
         ) : null}
         <div className="relative mx-6 my-5" style={{ height: virtualizer.getTotalSize() }}>
@@ -213,13 +219,13 @@ export function GridView({
             <div key={vr.key} className="absolute left-0 flex w-full gap-3" style={{ top: vr.start, height: tileH }}>
               {visible.slice(vr.index * cols, vr.index * cols + cols).map((r, j) => {
                 const index = vr.index * cols + j;
-                const on = selected.has(r.file);
+                const on = selected.has(r.id);
                 const value = group ? r.labels[group.name] : undefined;
                 return (
                   <button
-                    key={r.file}
+                    key={r.id}
                     onClick={(e) => click(e, index)}
-                    onDoubleClick={() => onOpen(r.file)}
+                    onDoubleClick={() => onOpen(r.id)}
                     className={cn(
                       "relative flex flex-col overflow-hidden rounded-lg border bg-card text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
                       on && "border-primary ring-1 ring-primary",
@@ -227,7 +233,7 @@ export function GridView({
                     style={{ width: tileW, height: tileH }}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={thumbUrl(project.slug, r.file)} alt="" loading="lazy" className="min-h-0 w-full flex-1 bg-muted object-cover" />
+                    <img src={thumbUrl(dataset.name, r.id)} alt="" loading="lazy" className="min-h-0 w-full flex-1 bg-muted object-cover" />
                     <span
                       className={cn(
                         "absolute top-2 left-2 flex size-[18px] items-center justify-center rounded-[4px] border border-zinc-500 bg-white/85",
@@ -236,7 +242,7 @@ export function GridView({
                     >
                       {on ? <CheckIcon className="size-3" /> : null}
                     </span>
-                    {r.status !== "todo" ? (
+                    {r.status === "done" || r.status === "review" ? (
                       <span
                         className={cn(
                           "absolute top-2 right-2 flex size-5 items-center justify-center rounded-full",
@@ -248,8 +254,8 @@ export function GridView({
                       </span>
                     ) : null}
                     <span className="flex h-[33px] shrink-0 items-center gap-1.5 border-t px-2.5">
-                      <span className="flex-1 truncate font-mono text-xs text-muted-foreground" title={r.file}>
-                        {r.file.replace(/\.[^.]+$/, "")}
+                      <span className="flex-1 truncate font-mono text-xs text-muted-foreground" title={`${r.name} · ${r.id}`}>
+                        {r.name.replace(/\.[^.]+$/, "")}
                       </span>
                       {value ? (
                         <span className="shrink-0 rounded-sm bg-muted px-1.5 text-xs font-medium">{value}</span>
@@ -284,11 +290,20 @@ export function GridView({
           ))}
           <span className="h-5 w-px bg-primary-foreground/25" />
           <button
+            onClick={() => void apply({}, "done")}
+            className="inline-flex h-7 items-center gap-1.5 rounded-md pr-1 pl-2 text-xs font-medium hover:bg-primary-foreground/10"
+          >
+            <CheckIcon className="size-4" />
+            Done
+            <Kbd className="border-transparent bg-primary-foreground/15 text-primary-foreground">D</Kbd>
+          </button>
+          <button
             onClick={() => void apply({}, "review")}
-            className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium hover:bg-primary-foreground/10"
+            className="inline-flex h-7 items-center gap-1.5 rounded-md pr-1 pl-2 text-xs font-medium hover:bg-primary-foreground/10"
           >
             <FlagIcon className="size-4" />
             Review
+            <Kbd className="border-transparent bg-primary-foreground/15 text-primary-foreground">F</Kbd>
           </button>
           <button
             onClick={() => setSelected(new Set())}
