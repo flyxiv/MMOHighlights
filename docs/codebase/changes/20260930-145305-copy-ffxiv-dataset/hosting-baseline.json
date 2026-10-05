@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-09-30T15:47:49.570173+09:00",
+  "continuation": "Upload copied frames and annotations to GCS and host local labeler",
+  "baseline_commit": "26d0ea94ab0e4dab27f014ac63bd020792d085d3",
+  "preexisting_status": "?? .gitignore\n?? docs/\n",
+  "preexisting_gitignore": "# Local source datasets and copied frames\n/dataset/\n",
+  "preexisting_copy_manifest_sha256": "7c7e58478f405e918a0f6ad2465990f22f0e9059d1a80473199570536eb4dfb0",
+  "preexisting_task_report": "index.html (same coherent dataset task; retained and extended)",
+  "github_issue": null,
+  "tracking_blocker": "gh issue search failed HTTP 401",
+  "gcs_bucket": "ai_datasets_jyn",
+  "target_prefix": "datasets/ffxiv_combat_frames/",
+  "target_prefix_existed": false,
+  "runtime_ports_listening": []
+}

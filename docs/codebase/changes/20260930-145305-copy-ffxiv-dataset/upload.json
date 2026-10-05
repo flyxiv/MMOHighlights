@@ -1,0 +1,8 @@
+{
+  "uri": "gs://ai_datasets_jyn/datasets/ffxiv_combat_frames/",
+  "objects": 924,
+  "uploaded": 924,
+  "reused": 0,
+  "bytes": 1887770797,
+  "verified": "All remote object sizes and MD5 hashes match; upload CRC32C checked."
+}

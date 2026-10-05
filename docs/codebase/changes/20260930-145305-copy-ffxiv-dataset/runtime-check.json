@@ -1,0 +1,54 @@
+{
+  "dataset": {
+    "name": "ffxiv_combat_frames",
+    "title": "FFXIV combat frames",
+    "description": "456 manually annotated FFXIV frames imported from Label Studio project 3.",
+    "tasks": {
+      "tags": {
+        "type": "multilabel",
+        "unit": null,
+        "description": null
+      }
+    },
+    "classes": {
+      "tags": [
+        "IsCombat",
+        "HasRedCircle",
+        "PullEnded"
+      ]
+    },
+    "base_release": "v1",
+    "latest": "v1",
+    "releases": [
+      "v1"
+    ],
+    "next_release": "v2",
+    "storage_uri": "gs://ai_datasets_jyn/datasets/ffxiv_combat_frames",
+    "stats": {
+      "total": 456,
+      "todo": 0,
+      "review": 0,
+      "done": 456,
+      "excluded": 0,
+      "new": 0,
+      "edited_not_done": 0,
+      "class_counts": {
+        "tags": {
+          "IsCombat": 252,
+          "HasRedCircle": 206,
+          "PullEnded": 79
+        }
+      }
+    },
+    "pending_sync": 0
+  },
+  "health": {
+    "storage": "gs://ai_datasets_jyn/datasets",
+    "pending_sync": 0,
+    "last_sync_error": null
+  },
+  "rows": 456,
+  "empty_tags": 125,
+  "downloaded_images_sha256_verified": 2,
+  "url": "http://localhost:3100/d/ffxiv_combat_frames"
+}

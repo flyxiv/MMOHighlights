@@ -1,0 +1,13 @@
+{
+  "url": "http://localhost:3100/d/ffxiv_combat_frames?sample=00743410de7257f1",
+  "dataset_link_found": true,
+  "labels_visible": [
+    "IsCombat",
+    "HasRedCircle",
+    "PullEnded"
+  ],
+  "full_resolution_image_loaded": true,
+  "javascript_errors": [],
+  "api_errors": [],
+  "visible_text": "MMOHighlights\n/\nImage Labeling\n/\nffxiv_combat_frames\nv1 \u2192 v2\n456 / 456 reviewed\n100%\nSaved\nCut v2\n/\nAll\n456\nTo do\nReview\nDone\n456\ndc4f794b-3_135.png\nIsCombat, HasRedCircle\n82f10633-114.png\nIsCombat, HasRedCircle\n193fb18f-3_129.png\nIsCombat, HasRedCircle\n1dc81a72-3_28.png\nIsCombat, HasRedCircle\n1a26f24f-3_72.png\n0847df3f-3_102.png\n9311ad60-3_140.png\nPullEnded\n58fb6036-3_55.png\nPullEnded\n56532d96-3_14.png\n1778e457-29.png\n62bc9d2a-3_70.png\nPullEnded\n94d83cfc-5_26.png\nIsCombat\n974634e5-3_151.png\nPullEnded\n7a29ded2-test8.png\need64585-33.png\nIsCombat, HasRedCircle\na86f0770-117.png\nIsCombat, HasRedCircle\n8a04621b-3_122.png\nIsCombat, HasRedCircle\n598a1d39-4_49.png\nIsCombat, HasRedCircle\na7d39c7e-4_18.png\n98fa4d9d-3_30.png\nIsCombat, HasRedCircle\n1095f650-3_105.png\nIsCombat, HasRedCircle\n692a7e02-3_125.png\nPullEnded\n7d1a5a20-6_6.png\nPullEnded\nc3db33cf-3_84.png\nc86f5ab5-3_38.png\nIsCombat, HasRedCircle\nf1ae7b85-4_62.png\n96a98ccf-3_12.png\ndd1ae51e-3_36.png\nIsCombat, HasRedCircle\n47e72794-5_29.png\nIsCombat\n1\u201329 of 456 \u00b7 release order, then new\nSingle\nGrid\n31%\nPre-label\nPrevious\nA\n1 of 456\n\u00b7\ndc4f794b-3_135.png\n\u00b7\n2947 \u00d7 1245\ntrain\nDone\nReview\nF\nExclude\nX\nD\nSave & next\nImage labels\nclass \u00b7 tags\nTask\ntags\n\u00b7 any number\nIsCombat\nQ\nHasRedCircle\nW\nPullEnded\nE\nClasses\nasks after drawing\n\nAdd a boxes or polygons task to draw shapes.\n\nShape task"
+}

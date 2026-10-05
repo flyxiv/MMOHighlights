@@ -1,0 +1,22 @@
+{
+  "overview": {
+    "loaded": true,
+    "svg_count": 1,
+    "links_valid": true,
+    "no_horizontal_overflow": true
+  },
+  "review": {
+    "loaded": true,
+    "svg_count": 3,
+    "links_valid": true,
+    "no_horizontal_overflow": true,
+    "controls": "search, subsystem filter and expandable diffs passed"
+  },
+  "history": {
+    "loaded": true,
+    "svg_count": 0,
+    "links_valid": true,
+    "no_horizontal_overflow": true
+  },
+  "javascript_errors": []
+}

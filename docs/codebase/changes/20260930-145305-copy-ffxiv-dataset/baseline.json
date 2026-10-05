@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-09-30T14:56:05.113115+09:00",
+  "repository": "https://github.com/flyxiv/MMOHighlights",
+  "worktree": "C:\\Users\\PC\\orca\\workspaces\\MMOHighlights\\flyxiv-create-image-labeling-page",
+  "branch": "flyxiv/create-image-labeling-page",
+  "baseline_commit": "26d0ea94ab0e4dab27f014ac63bd020792d085d3",
+  "git_status": "clean",
+  "dataset_existed": false,
+  "root_gitignore_existed": false,
+  "source_annotation": "E:\\project-3-at-2025-10-03-18-51-621d8aeb.json",
+  "source_sha256": "4a760f39d52274e0be16a20391a68d2e0144a7e804eba149895925fab062dcf5",
+  "source_frames": "C:\\Users\\PC\\AppData\\Local\\label-studio\\label-studio\\media\\upload\\3",
+  "github_issue": null,
+  "tracking_blocker": "gh issue list: HTTP 401 Bad credentials"
+}

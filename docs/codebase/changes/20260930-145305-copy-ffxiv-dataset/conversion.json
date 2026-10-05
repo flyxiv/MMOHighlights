@@ -1,0 +1,12 @@
+{
+  "dataset": "ffxiv_combat_frames",
+  "samples": 456,
+  "labels": {
+    "IsCombat": 252,
+    "HasRedCircle": 206,
+    "PullEnded": 79
+  },
+  "empty_tag_samples": 125,
+  "version": "v1",
+  "warnings": []
+}

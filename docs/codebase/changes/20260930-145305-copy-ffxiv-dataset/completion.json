@@ -1,0 +1,37 @@
+{
+  "updated": "2026-09-30T15:58:27.005418+09:00",
+  "scope": "Local copy, uniform conversion, GCS upload and local hosting",
+  "files_added": 1386,
+  "text_files_added": 474,
+  "binary_paths_added": 912,
+  "text_lines_added": 20441,
+  "text_lines_removed": 0,
+  "logical_bytes": 3775083082,
+  "note": "456 staging PNG paths are hard links to original local frames; logical bytes are not disk consumption. Review artifacts, dependencies, builds and caches excluded.",
+  "verification": {
+    "backend_tests": "12 passed; one existing Starlette deprecation warning",
+    "backend_lint": "passed including new importer after formatting",
+    "frontend_build": "passed compilation, lint and type checks",
+    "release_validator": "456 unique samples, 0 errors, 0 warnings",
+    "source_semantics": "All 456 label values, statuses and review timestamps preserved; 125 empty-tag samples",
+    "gcs": {
+      "uri": "gs://ai_datasets_jyn/datasets/ffxiv_combat_frames/",
+      "objects": 924,
+      "uploaded": 924,
+      "reused": 0,
+      "bytes": 1887770797,
+      "verified": "All remote object sizes and MD5 hashes match; upload CRC32C checked."
+    },
+    "runtime": {
+      "url": "http://localhost:3100/d/ffxiv_combat_frames",
+      "samples": 456,
+      "done": 456,
+      "pending_sync": 0,
+      "sync_error": null,
+      "served_images_hash_checked": 2
+    },
+    "browser": "Dataset list and editor rendered; image and three labels visible; no JS/API errors; screenshots inspected"
+  },
+  "github": "HTTP 401; no issue created",
+  "integration": "Running from this worktree on loopback ports 3100/8100 against default GCS bucket. No commit, push or login autostart task."
+}
